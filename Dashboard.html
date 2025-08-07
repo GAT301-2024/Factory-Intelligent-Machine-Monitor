@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MachSense Dashboard</title>
+  <meta name="description" content="Factory/Industrial IoT Dashboard for real-time monitoring" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to right, #0f2027, #203a43, #2c5364);
+      color: white;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 40px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    .status {
+      margin-bottom: 20px;
+      font-size: 1rem;
+      color: #ffd700;
+      text-align: center;
+    }
+    .cards-wrapper {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 20px;
+      margin-bottom: 40px;
+    }
+    .card {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 12px;
+      padding: 16px;
+      width: 260px;
+      text-align: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      transition: transform 0.2s;
+    }
+    .card.alert {
+      background: rgba(255, 68, 68, 0.25);
+      border: 2px solid #ff4444;
+      color: #fff;
+      animation: alertPulse 1s infinite alternate;
+    }
+    @keyframes alertPulse {
+      from { box-shadow: 0 0 8px #ff4444; }
+      to { box-shadow: 0 0 24px #ff4444; }
+    }
+    .card:focus-within, .card:hover {
+      outline: 2px solid #ffd700;
+      transform: translateY(-4px) scale(1.02);
+    }
+    canvas {
+      background: rgba(255,255,255,0.1);
+      border-radius: 10px;
+      box-shadow: 0 0 8px rgba(0,0,0,0.3);
+      margin-bottom: 40px;
+    }
+    @media (max-width: 700px) {
+      .cards-wrapper { flex-direction: column; align-items: center; }
+      .card { width: 90vw; }
+      canvas { width: 100% !important; height: 180px !important; }
+    }
+    /* Accessibility: focus style */
+    .card:focus-within { outline: 2px solid #ffd700; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="authBox" style="background:#1a2633; color:#fff; padding:18px 24px; border-radius:10px; margin-bottom:24px; width:100%; max-width:400px; box-shadow:0 2px 8px rgba(0,0,0,0.18);">
+      <div id="authForms">
+        <form id="loginForm" autocomplete="off" style="display:block; margin-bottom:12px;">
+          <h2 style="margin:0 0 10px 0; font-size:1.2rem;">Login</h2>
+          <input id="loginUser" type="text" placeholder="Username" required style="width:100%;margin-bottom:8px;padding:8px;border-radius:6px;border:none;" />
+          <input id="loginPass" type="password" placeholder="Password" required style="width:100%;margin-bottom:8px;padding:8px;border-radius:6px;border:none;" />
+          <button type="submit" style="width:100%;background:#00b894;color:#fff;padding:10px;border:none;border-radius:6px;font-weight:bold;">Login</button>
+        </form>
+        <form id="registerForm" autocomplete="off" style="display:none; margin-bottom:12px;">
+          <h2 style="margin:0 0 10px 0; font-size:1.2rem;">Register</h2>
+          <input id="regUser" type="text" placeholder="Username" required style="width:100%;margin-bottom:8px;padding:8px;border-radius:6px;border:none;" />
+          <input id="regPass" type="password" placeholder="Password" required style="width:100%;margin-bottom:8px;padding:8px;border-radius:6px;border:none;" />
+          <button type="submit" style="width:100%;background:#0984e3;color:#fff;padding:10px;border:none;border-radius:6px;font-weight:bold;">Register</button>
+        </form>
+        <div style="text-align:center;">
+          <span id="toggleAuth" style="color:#00b894;cursor:pointer;font-size:0.95rem;">Don't have an account? Register</span>
+        </div>
+      </div>
+      <div id="authStatus" style="display:none;text-align:center;"></div>
+      <div id="logoutBox" style="display:none;text-align:center;margin-top:10px;">
+        <span id="loggedInUser" style="font-weight:bold;"></span>
+        <button id="logoutBtn" style="margin-left:12px;background:#d63031;color:#fff;padding:6px 16px;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">Logout</button>
+      </div>
+    </div>
+    <h1>Factory Intelligent Machine Monitor</h1>
+    <div class="status" id="status" aria-live="polite">Connecting to sensors...</div>
+    <div id="predictionBox" style="background:#222; color:#fff; padding:14px 20px; border-radius:8px; margin-bottom:20px; font-size:1rem; text-align:center; box-shadow:0 2px 8px rgba(0,0,0,0.15);">
+      <span id="predictionText">Prediction: --</span>
+    </div>
+    <div id="alertBox" style="display:none; background:#ff4444; color:#fff; padding:16px 24px; border-radius:8px; margin-bottom:20px; font-size:1.1rem; font-weight:bold; text-align:center; box-shadow:0 2px 8px rgba(0,0,0,0.2);">
+      <!-- Alert message will be injected here -->
+    </div>
+    <div id="shutdownBox" style="display:none; margin-bottom:20px; text-align:center;">
+      <button id="shutdownBtn" style="background:#222; color:#fff; border:none; border-radius:8px; padding:12px 32px; font-size:1.1rem; font-weight:bold; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.2);">Turn Off Machines</button>
+    </div>
+    <div class="cards-wrapper">
+      <div class="card" tabindex="0">
+        <h2>🌡 Temperature</h2>
+        <p id="temp" aria-label="Temperature">-- °C</p>
+      </div>
+      <div class="card" tabindex="0">
+        <h2>💧 Humidity</h2>
+        <p id="humid" aria-label="Humidity">--%</p>
+      </div>
+      <div class="card" tabindex="0">
+        <h2>🌀 Vibration</h2>
+        <p id="vib" aria-label="Vibration">--</p>
+      </div>
+      <div class="card" tabindex="0">
+        <h2>⚙ RPM</h2>
+        <p id="rpm" aria-label="RPM">--</p>
+      </div>
+    </div>
+    <div style="margin-bottom:20px;">
+      <label for="metricSelect" style="font-size:1rem;">Select Metric to Analyze: </label>
+      <select id="metricSelect" aria-label="Select metric" style="font-size:1rem;padding:4px 8px;border-radius:6px;">
+        <option value="temp">🌡 Temperature</option>
+        <option value="humid">💧 Humidity</option>
+        <option value="vib">🌀 Vibration</option>
+        <option value="rpm">⚙ RPM</option>
+      </select>
+    </div>
+    <canvas id="metricChart" width="600" height="200" aria-label="Metric Chart" role="img"></canvas>
+    <div id="analyticsBox" style="width:100%;max-width:700px;margin:0 auto 30px auto;padding:18px 20px;background:#1a2633;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.13);color:#fff;">
+      <h2 style="font-size:1.1rem;margin:0 0 10px 0;">Analytics</h2>
+      <div style="margin-bottom:10px;">
+        <label for="analyticsMetric" style="font-size:1rem;">Metric: </label>
+        <select id="analyticsMetric" style="font-size:1rem;padding:4px 8px;border-radius:6px;">
+          <option value="temp">🌡 Temperature</option>
+          <option value="humid">💧 Humidity</option>
+          <option value="vib">🌀 Vibration</option>
+          <option value="rpm">⚙ RPM</option>
+        </select>
+        <button id="refreshAnalytics" style="margin-left:10px;background:#00b894;color:#fff;padding:6px 16px;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">Refresh</button>
+      </div>
+      <div id="analyticsSummary" style="margin-bottom:12px;font-size:1rem;"></div>
+      <div id="analyticsAnomalies" style="font-size:0.98rem;"></div>
+    </div>
+  </div>
+
+  <script>
+    // --- Configuration ---
+    const REGISTER_URL = "http://127.0.0.1:8000/register";
+    const LOGIN_URL = "http://127.0.0.1:8000/login";
+    const API_URL = "http://127.0.0.1:8000/latest"; // Set to your real API endpoint for latest sensor data
+    const LOG_URL = "http://127.0.0.1:8000/log"; // FastAPI log endpoint
+    const PREDICT_URL = "http://127.0.0.1:8000/predict"; // FastAPI prediction endpoint
+    const REFRESH_INTERVAL = 1200000; // ms
+    const ANALYTICS_SUMMARY_URL = "http://127.0.0.1:8000/analytics/summary";
+    const ANALYTICS_ANOMALY_URL = "http://127.0.0.1:8000/analytics/anomalies";
+    // --- Analytics Fetch ---
+    async function fetchAnalyticsSummary(metric) {
+      try {
+        const token = getToken();
+        if (!token) throw new Error('Not authenticated');
+        const res = await fetch(`${ANALYTICS_SUMMARY_URL}?metric=${metric}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('Summary fetch failed');
+        const data = await res.json();
+        return data;
+      } catch {
+        return { summary: 'Not available' };
+      }
+    }
+
+    async function fetchAnalyticsAnomalies(metric) {
+      try {
+        const token = getToken();
+        if (!token) throw new Error('Not authenticated');
+        const res = await fetch(`${ANALYTICS_ANOMALY_URL}?metric=${metric}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('Anomaly fetch failed');
+        const data = await res.json();
+        return data;
+      } catch {
+        return { anomalies: [] };
+      }
+    }
+
+    async function updateAnalytics(metric) {
+      document.getElementById('analyticsSummary').textContent = 'Loading...';
+      document.getElementById('analyticsAnomalies').textContent = '';
+      const summary = await fetchAnalyticsSummary(metric);
+      if (summary && summary.average !== undefined) {
+        document.getElementById('analyticsSummary').innerHTML =
+          `<b>Average:</b> ${summary.average.toFixed(2)} &nbsp; <b>Min:</b> ${summary.min.toFixed(2)} &nbsp; <b>Max:</b> ${summary.max.toFixed(2)} &nbsp; <b>Count:</b> ${summary.count}`;
+      } else {
+        document.getElementById('analyticsSummary').textContent = summary.summary || 'Not available';
+      }
+      const anomalies = await fetchAnalyticsAnomalies(metric);
+      if (anomalies && anomalies.anomalies && anomalies.anomalies.length > 0) {
+        let html = `<b>Anomalies (${anomalies.anomalies.length}):</b><br><table style='width:100%;margin-top:6px;background:#222;border-radius:6px;'><tr><th style='color:#ffd700;'>ID</th><th style='color:#ffd700;'>Value</th><th style='color:#ffd700;'>Timestamp</th></tr>`;
+        anomalies.anomalies.forEach(a => {
+          html += `<tr><td>${a.id}</td><td>${a.value}</td><td>${a.timestamp.replace('T',' ').slice(0,19)}</td></tr>`;
+        });
+        html += '</table>';
+        document.getElementById('analyticsAnomalies').innerHTML = html;
+      } else {
+        document.getElementById('analyticsAnomalies').innerHTML = '<b>No anomalies detected.</b>';
+      }
+    }
+    // --- Log Data to FastAPI ---
+    function getToken() {
+      return localStorage.getItem('token') || null;
+    }
+
+    async function postSensorData(data) {
+      try {
+        const token = getToken();
+        if (!token) return; // Don't log if not authenticated
+        // Convert vibration to 0/1 for backend
+        const vibVal = data.vib === 'Alert' ? 1 : 0;
+        await fetch(LOG_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            temp: Number(data.temp),
+            humid: Number(data.humid),
+            vib: vibVal,
+            rpm: Number(data.rpm),
+            timestamp: new Date().toISOString()
+          })
+        });
+      } catch (e) {
+        // Optionally handle/log error
+      }
+    }
+    // --- Prediction Fetch ---
+    async function fetchPrediction() {
+      try {
+        const token = getToken();
+        if (!token) throw new Error('Not authenticated');
+        const res = await fetch(PREDICT_URL, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('Prediction fetch failed');
+        const data = await res.json();
+        document.getElementById('predictionText').textContent = `Prediction: ${data.prediction}`;
+      } catch {
+        document.getElementById('predictionText').textContent = 'Prediction: Not available';
+      }
+    }
+
+    // --- State & Thresholds ---
+    const METRICS = {
+      temp: { label: 'Temperature (°C)', color: 'rgba(255, 99, 132, 1)', bg: 'rgba(255,255,255,0.2)', threshold: 26 },
+      humid: { label: 'Humidity (%)', color: 'rgba(54, 162, 235, 1)', bg: 'rgba(255,255,255,0.2)', threshold: 60 },
+      vib: { label: 'Vibration', color: 'rgba(255, 206, 86, 1)', bg: 'rgba(255,255,255,0.2)', threshold: 1 }, // 1: Alert
+      rpm: { label: 'RPM', color: 'rgba(75, 192, 192, 1)', bg: 'rgba(255,255,255,0.2)', threshold: 1600 }
+    };
+    let history = {
+      temp: [22, 23, 21, 24, 22],
+      humid: [45, 47, 44, 50, 46],
+      vib: [0, 0, 0, 0, 0], // 0: Normal, 1: Alert
+      rpm: [1500, 1510, 1490, 1520, 1505]
+    };
+    let timeLabels = ['0s', '5s', '10s', '15s', '20s'];
+    let lastUpdate = null;
+    let selectedMetric = 'temp';
+    let alertState = { active: false, metrics: [] };
+
+    // --- Chart Setup ---
+    const ctx = document.getElementById('metricChart').getContext('2d');
+    let metricChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [...timeLabels],
+        datasets: [{
+          label: METRICS[selectedMetric].label,
+          data: [...history[selectedMetric]],
+          backgroundColor: METRICS[selectedMetric].bg,
+          borderColor: METRICS[selectedMetric].color,
+          borderWidth: 2,
+          fill: true,
+          tension: 0.4,
+          pointRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            beginAtZero: false,
+            grid: { color: 'rgba(255,255,255,0.2)' },
+            ticks: { color: '#fff' }
+          },
+          x: {
+            grid: { color: 'rgba(255,255,255,0.1)' },
+            ticks: { color: '#fff' }
+          }
+        },
+        plugins: {
+          legend: {
+            labels: { color: '#fff' }
+          }
+        }
+      }
+    });
+
+    // --- Utility Functions ---
+    function setStatus(msg, color = '#0f2027') {
+      const status = document.getElementById('status');
+      status.textContent = msg;
+      status.style.color = color;
+    }
+
+    function updateCards(data, alertMetrics = []) {
+      // Remove alert class from all cards first
+      document.querySelectorAll('.card').forEach(card => card.classList.remove('alert'));
+      // Update values and highlight alerts
+      document.getElementById('temp').textContent = `${data.temp} °C`;
+      document.getElementById('humid').textContent = `${data.humid}%`;
+      document.getElementById('vib').textContent = data.vib;
+      document.getElementById('rpm').textContent = data.rpm;
+      if (alertMetrics.includes('temp')) document.getElementById('temp').parentElement.classList.add('alert');
+      if (alertMetrics.includes('humid')) document.getElementById('humid').parentElement.classList.add('alert');
+      if (alertMetrics.includes('vib')) document.getElementById('vib').parentElement.classList.add('alert');
+      if (alertMetrics.includes('rpm')) document.getElementById('rpm').parentElement.classList.add('alert');
+    }
+
+    function checkThresholds(data) {
+      let alertMetrics = [];
+      if (Number(data.temp) > METRICS.temp.threshold) alertMetrics.push('temp');
+      if (Number(data.humid) > METRICS.humid.threshold) alertMetrics.push('humid');
+      if (data.vib === 'Alert') alertMetrics.push('vib');
+      if (Number(data.rpm) > METRICS.rpm.threshold) alertMetrics.push('rpm');
+      return alertMetrics;
+    }
+
+    function showAlert(alertMetrics) {
+      const alertBox = document.getElementById('alertBox');
+      if (alertMetrics.length === 0) {
+        alertBox.style.display = 'none';
+        alertBox.innerHTML = '';
+        document.getElementById('shutdownBox').style.display = 'none';
+        alertState.active = false;
+        alertState.metrics = [];
+        return;
+      }
+      let msg = 'ALERT: ';
+      msg += alertMetrics.map(m => {
+        if (m === 'temp') return `Temperature > ${METRICS.temp.threshold}°C`;
+        if (m === 'humid') return `Humidity > ${METRICS.humid.threshold}%`;
+        if (m === 'vib') return `Vibration: ALERT`;
+        if (m === 'rpm') return `RPM > ${METRICS.rpm.threshold}`;
+        return '';
+      }).join(' | ');
+      alertBox.innerHTML = msg;
+      alertBox.style.display = 'block';
+      document.getElementById('shutdownBox').style.display = 'block';
+      alertState.active = true;
+      alertState.metrics = alertMetrics;
+    }
+
+    function updateChart(newData, newTime, metric) {
+      history[metric].push(newData);
+      timeLabels.push(newTime);
+      if (history[metric].length > 10) {
+        history[metric].shift();
+      }
+      if (timeLabels.length > 10) {
+        timeLabels.shift();
+      }
+      // Update chart only if current metric is selected
+      if (metric === selectedMetric) {
+        metricChart.data.labels = [...timeLabels];
+        metricChart.data.datasets[0].data = [...history[metric]];
+        metricChart.update();
+      }
+    }
+
+    // --- Data Fetching (Mock or Real) ---
+    async function fetchSensorData() {
+      try {
+        const token = getToken();
+        if (!token) throw new Error('Not authenticated');
+        const res = await fetch(API_URL, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('Network error');
+        const data = await res.json();
+        return data;
+      } catch (e) {
+        setStatus('Error fetching data. Retrying...', 'red');
+        throw e;
+      }
+    }
+
+    // --- Main Loop ---
+    async function refresh() {
+      try {
+        if (!getToken()) {
+          setStatus('Please login to view data.', 'orange');
+          return;
+        }
+        setStatus('Updating...');
+        const data = await fetchSensorData();
+        // Log data to FastAPI backend
+        postSensorData(data);
+        // Check thresholds
+        const alertMetrics = checkThresholds(data);
+        updateCards(data, alertMetrics);
+        showAlert(alertMetrics);
+        // Update all metrics' history
+        const t = data.time || `${(timeLabels.length * 5)}s`;
+        updateChart(Number(data.temp), t, 'temp');
+        updateChart(Number(data.humid), t, 'humid');
+        updateChart(data.vib === 'Alert' ? 1 : 0, t, 'vib');
+        updateChart(Number(data.rpm), t, 'rpm');
+        lastUpdate = new Date();
+        setStatus(`Last updated: ${lastUpdate.toLocaleTimeString()}`, '#00ff99');
+      } catch {
+        // Error already handled in fetchSensorData
+      }
+    }
+
+    // --- Shutdown Button Handler ---
+    document.getElementById('shutdownBtn').addEventListener('click', function() {
+      alert('Shutdown command sent! (This is a placeholder. Integrate with your backend to actually turn off machines.)');
+    });
+
+    // --- Initial Load ---
+    // --- Metric Selector ---
+    document.getElementById('metricSelect').addEventListener('change', function(e) {
+      selectedMetric = e.target.value;
+      // Update chart config
+      metricChart.data.labels = [...timeLabels];
+      metricChart.data.datasets[0].label = METRICS[selectedMetric].label;
+      metricChart.data.datasets[0].data = [...history[selectedMetric]];
+      metricChart.data.datasets[0].borderColor = METRICS[selectedMetric].color;
+      metricChart.data.datasets[0].backgroundColor = METRICS[selectedMetric].bg;
+      // For vibration, show 0/1 as Normal/Alert
+      if (selectedMetric === 'vib') {
+        metricChart.options.scales.y = {
+          beginAtZero: true,
+          min: 0,
+          max: 1,
+          ticks: {
+            color: '#fff',
+            stepSize: 1,
+            callback: function(value) { return value === 1 ? 'Alert' : 'Normal'; }
+          },
+          grid: { color: 'rgba(255,255,255,0.2)' }
+        };
+      } else {
+        metricChart.options.scales.y = {
+          beginAtZero: false,
+          grid: { color: 'rgba(255,255,255,0.2)' },
+          ticks: { color: '#fff' }
+        };
+      }
+      metricChart.update();
+    });
+
+    // --- Auth UI Logic ---
+    const loginForm = document.getElementById('loginForm');
+    const registerForm = document.getElementById('registerForm');
+    const toggleAuth = document.getElementById('toggleAuth');
+    const authStatus = document.getElementById('authStatus');
+    const authForms = document.getElementById('authForms');
+    const logoutBox = document.getElementById('logoutBox');
+    const loggedInUser = document.getElementById('loggedInUser');
+    const logoutBtn = document.getElementById('logoutBtn');
+
+    function showLogin() {
+      loginForm.style.display = 'block';
+      registerForm.style.display = 'none';
+      toggleAuth.textContent = "Don't have an account? Register";
+    }
+    function showRegister() {
+      loginForm.style.display = 'none';
+      registerForm.style.display = 'block';
+      toggleAuth.textContent = "Already have an account? Login";
+    }
+    toggleAuth.onclick = function() {
+      if (loginForm.style.display === 'none') showLogin();
+      else showRegister();
+    };
+
+    function setAuthStatus(msg, color = '#ffd700') {
+      authStatus.textContent = msg;
+      authStatus.style.display = 'block';
+      authStatus.style.color = color;
+    }
+    function hideAuthStatus() { authStatus.style.display = 'none'; }
+
+    function setLoggedIn(username) {
+      authForms.style.display = 'none';
+      logoutBox.style.display = 'block';
+      loggedInUser.textContent = `Logged in as: ${username}`;
+      document.getElementById('authBox').style.background = '#183a2a';
+    }
+    function setLoggedOut() {
+      authForms.style.display = 'block';
+      logoutBox.style.display = 'none';
+      loggedInUser.textContent = '';
+      document.getElementById('authBox').style.background = '#1a2633';
+    }
+
+    loginForm.onsubmit = async function(e) {
+      e.preventDefault();
+      hideAuthStatus();
+      const username = document.getElementById('loginUser').value.trim();
+      const password = document.getElementById('loginPass').value;
+      try {
+        const res = await fetch(LOGIN_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        if (!res.ok) throw new Error('Login failed');
+        const data = await res.json();
+        localStorage.setItem('token', data.access_token);
+        localStorage.setItem('username', username);
+        setAuthStatus('Login successful!', '#00ff99');
+        setLoggedIn(username);
+        setTimeout(() => { hideAuthStatus(); refresh(); fetchPrediction(); }, 800);
+      } catch {
+        setAuthStatus('Login failed. Check credentials.', 'red');
+      }
+    };
+
+    registerForm.onsubmit = async function(e) {
+      e.preventDefault();
+      hideAuthStatus();
+      const username = document.getElementById('regUser').value.trim();
+      const password = document.getElementById('regPass').value;
+      try {
+        const res = await fetch(REGISTER_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.detail || 'Registration failed');
+        }
+        setAuthStatus('Registration successful! Please login.', '#00ff99');
+        showLogin();
+      } catch (err) {
+        setAuthStatus(err.message || 'Registration failed.', 'red');
+      }
+    };
+
+    logoutBtn.onclick = function() {
+      localStorage.removeItem('token');
+      localStorage.removeItem('username');
+      setLoggedOut();
+      setAuthStatus('Logged out.', '#ffd700');
+      setTimeout(() => { hideAuthStatus(); refresh(); fetchPrediction(); }, 800);
+    };
+
+    // On load, check auth state
+    // --- Analytics UI Events ---
+    document.getElementById('refreshAnalytics').onclick = function() {
+      const metric = document.getElementById('analyticsMetric').value;
+      updateAnalytics(metric);
+    };
+    document.getElementById('analyticsMetric').onchange = function() {
+      updateAnalytics(this.value);
+    };
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const token = getToken();
+      const username = localStorage.getItem('username');
+      if (token && username) {
+        setLoggedIn(username);
+      } else {
+        setLoggedOut();
+      }
+      refresh();
+      fetchPrediction();
+      updateAnalytics(document.getElementById('analyticsMetric').value);
+      setInterval(refresh, REFRESH_INTERVAL);
+      setInterval(fetchPrediction, 20000);
+    });
+  </script>
+</body>
+</html>
