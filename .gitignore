@@ -1,0 +1,7 @@
+*.hex
+*.bin
+*.elf
+*.log
+*.swp
+.DS_Store
+build/
